@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 32
+const SchemaVersion = 35
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -655,6 +655,78 @@ CREATE TRIGGER IF NOT EXISTS trg_vault_docs_scope_consistency_upd
   BEGIN
     SELECT RAISE(ABORT, 'vault_documents_scope_consistency violation');
   END;`,
+
+	// Version 33 → 34: add chat_id column + composite index (mirrors PG migration 000056).
+	// SQLite lacks regex by default — skip backfill (desktop is single-user; cross-chat risk minimal).
+	33: `ALTER TABLE vault_documents ADD COLUMN chat_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_vault_docs_team_chat ON vault_documents(team_id, chat_id) WHERE team_id IS NOT NULL;`,
+
+	// Version 34 → 35: change agent_heartbeats.provider_id FK to ON DELETE SET NULL
+	// (mirrors PG migration 000057). SQLite cannot ALTER FK clauses, so the table
+	// must be rebuilt. Explicit 25-column INSERT/SELECT to avoid silent column drift.
+	34: `-- Defensive: clear orphan provider_id refs before rebuild (idempotent).
+UPDATE agent_heartbeats
+   SET provider_id = NULL
+ WHERE provider_id IS NOT NULL
+   AND provider_id NOT IN (SELECT id FROM llm_providers);
+
+-- Rebuild table with ON DELETE SET NULL on provider_id FK.
+CREATE TABLE agent_heartbeats_new (
+    id                 TEXT NOT NULL PRIMARY KEY,
+    agent_id           TEXT NOT NULL UNIQUE REFERENCES agents(id) ON DELETE CASCADE,
+    enabled            BOOLEAN NOT NULL DEFAULT 0,
+    interval_sec       INT NOT NULL DEFAULT 1800,
+    prompt             TEXT,
+    provider_id        TEXT REFERENCES llm_providers(id) ON DELETE SET NULL,
+    model              VARCHAR(200),
+    isolated_session   BOOLEAN NOT NULL DEFAULT 1,
+    light_context      BOOLEAN NOT NULL DEFAULT 0,
+    ack_max_chars      INT NOT NULL DEFAULT 300,
+    max_retries        INT NOT NULL DEFAULT 2,
+    active_hours_start VARCHAR(5),
+    active_hours_end   VARCHAR(5),
+    timezone           TEXT,
+    channel            VARCHAR(50),
+    chat_id            TEXT,
+    next_run_at        TEXT,
+    last_run_at        TEXT,
+    last_status        VARCHAR(20),
+    last_error         TEXT,
+    run_count          INT NOT NULL DEFAULT 0,
+    suppress_count     INT NOT NULL DEFAULT 0,
+    metadata           TEXT DEFAULT '{}',
+    created_at         TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at         TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+INSERT INTO agent_heartbeats_new (
+    id, agent_id, enabled, interval_sec, prompt, provider_id, model,
+    isolated_session, light_context, ack_max_chars, max_retries,
+    active_hours_start, active_hours_end, timezone, channel, chat_id,
+    next_run_at, last_run_at, last_status, last_error,
+    run_count, suppress_count, metadata, created_at, updated_at
+) SELECT
+    id, agent_id, enabled, interval_sec, prompt, provider_id, model,
+    isolated_session, light_context, ack_max_chars, max_retries,
+    active_hours_start, active_hours_end, timezone, channel, chat_id,
+    next_run_at, last_run_at, last_status, last_error,
+    run_count, suppress_count, metadata, created_at, updated_at
+  FROM agent_heartbeats;
+
+DROP TABLE agent_heartbeats;
+ALTER TABLE agent_heartbeats_new RENAME TO agent_heartbeats;
+
+-- Recreate the only index on agent_heartbeats (verified via grep).
+CREATE INDEX IF NOT EXISTS idx_heartbeats_due
+  ON agent_heartbeats(next_run_at)
+  WHERE enabled = 1 AND next_run_at IS NOT NULL;`,
+	// Version 35 → 36: add encrypted_env BLOB column to secure_cli_agent_grants.
+	// Mirrors PG migration 000058. NULL = no grant-level env override.
+	// DOWN path: modernc.org/sqlite supports DROP COLUMN since v3.35 (bundled
+	// version is ≥3.39). If DROP COLUMN fails on an older embedded build, the
+	// fallback is to rebuild the table without the column — see runbook
+	// docs/runbooks/packages-migration-rollback.md.
+	35: `ALTER TABLE secure_cli_agent_grants ADD COLUMN encrypted_env BLOB;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.
