@@ -252,5 +252,36 @@ func init() {
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",
+		// Package updates (Phase 4+5)
+		MsgPackageNotInstalled:  "Gói %s chưa được cài đặt",
+		MsgPackageUpdateLocked:  "Gói %s đang được cập nhật bởi một yêu cầu khác",
+		MsgReleaseNotFound:      "Không tìm thấy phiên bản %s cho %s",
+		MsgAssetNotFound:        "Không có tệp tương thích cho %s/%s",
+		MsgChecksumMismatch:     "Checksum không khớp cho %s",
+		MsgUpdateSwapFailed:     "Không cài được %s; đã khôi phục phiên bản cũ",
+		MsgUpdateManifestDesync: "Binary đã cập nhật nhưng lưu manifest thất bại — cần khôi phục thủ công cho %s",
+		MsgUpdateCacheStale:     "Cache cập nhật đã cũ; hãy refresh trước khi áp dụng",
+
+		// Package update source labels
+		MsgPackagesUpdatesSourceGithub: "GitHub",
+		MsgPackagesUpdatesSourcePip:    "pip",
+		MsgPackagesUpdatesSourceNpm:    "npm",
+		MsgPackagesUpdatesSourceApk:    "apk",
+
+		// Package update availability messages
+		MsgPackagesUpdatesUnavailablePip: "pip chưa cài trên hệ thống",
+		MsgPackagesUpdatesUnavailableNpm: "npm chưa cài trên hệ thống",
+		MsgPackagesUpdatesUnavailableApk: "apk không khả dụng trên hệ thống này",
+
+		// Package update failure reasons
+		MsgPackagesUpdatesReasonDependencyConflict: "Xung đột phụ thuộc",
+		MsgPackagesUpdatesReasonPermission:         "Bị từ chối quyền",
+		MsgPackagesUpdatesReasonNetwork:            "Lỗi mạng",
+		MsgPackagesUpdatesReasonNotFound:           "Không tìm thấy gói",
+		MsgPackagesUpdatesReasonTargetMissing:      "Phiên bản không tồn tại",
+		MsgPackagesUpdatesReasonExternallyManaged:  "Môi trường được quản lý bên ngoài",
+		MsgPackagesUpdatesReasonLocked:             "Cơ sở dữ liệu gói đang bị khóa",
+		MsgPackagesUpdatesReasonDiskFull:           "Đĩa đã đầy",
+		MsgPackagesUpdatesReasonHelperUnavailable:  "Dịch vụ đặc quyền không khả dụng",
 	})
 }

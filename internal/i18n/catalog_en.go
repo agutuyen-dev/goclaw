@@ -252,5 +252,36 @@ func init() {
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",
+		// Package updates (Phase 4+5)
+		MsgPackageNotInstalled:  "Package %s is not installed",
+		MsgPackageUpdateLocked:  "Package %s is being updated by another request",
+		MsgReleaseNotFound:      "Release %s not found for %s",
+		MsgAssetNotFound:        "No compatible asset for %s/%s",
+		MsgChecksumMismatch:     "Checksum mismatch for %s",
+		MsgUpdateSwapFailed:     "Failed to install %s; previous version restored",
+		MsgUpdateManifestDesync: "Binary updated but manifest save failed — manual recovery required for %s",
+		MsgUpdateCacheStale:     "Updates cache stale; run refresh before applying an update",
+
+		// Package update source labels
+		MsgPackagesUpdatesSourceGithub: "GitHub",
+		MsgPackagesUpdatesSourcePip:    "pip",
+		MsgPackagesUpdatesSourceNpm:    "npm",
+		MsgPackagesUpdatesSourceApk:    "apk",
+
+		// Package update availability messages
+		MsgPackagesUpdatesUnavailablePip: "pip not installed on this system",
+		MsgPackagesUpdatesUnavailableNpm: "npm not installed on this system",
+		MsgPackagesUpdatesUnavailableApk: "apk not available on this system",
+
+		// Package update failure reasons
+		MsgPackagesUpdatesReasonDependencyConflict: "Dependency conflict",
+		MsgPackagesUpdatesReasonPermission:         "Permission denied",
+		MsgPackagesUpdatesReasonNetwork:            "Network error",
+		MsgPackagesUpdatesReasonNotFound:           "Package not found",
+		MsgPackagesUpdatesReasonTargetMissing:      "Version not available",
+		MsgPackagesUpdatesReasonExternallyManaged:  "Environment externally managed",
+		MsgPackagesUpdatesReasonLocked:             "Package database is locked",
+		MsgPackagesUpdatesReasonDiskFull:           "Disk full",
+		MsgPackagesUpdatesReasonHelperUnavailable:  "Privileged helper unavailable",
 	})
 }
