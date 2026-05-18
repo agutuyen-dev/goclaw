@@ -73,7 +73,6 @@ func NewSQLiteStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Hooks:                NewSQLiteHookStore(db),
 		Webhooks:             NewSQLiteWebhookStore(db),
 		WebhookCalls:         NewSQLiteWebhookCallStore(db),
-	}, nil
 		Workstations:           NewSQLiteWorkstationStore(db, cfg.EncryptionKey),
 		WorkstationLinks:       NewSQLiteAgentWorkstationLinkStore(db),
 		WorkstationPermissions: NewSQLiteWorkstationPermissionStore(db),

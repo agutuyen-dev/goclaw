@@ -229,7 +229,7 @@ func TestVertexProviderForwardsThoughtSignatureOnToolCalls(t *testing.T) {
 	// Round 1: assistant responds with tool_calls carrying thought_signature.
 	r1, err := prov.Chat(context.Background(), ChatRequest{
 		Messages: []Message{{Role: "user", Content: "go"}},
-		Tools:    []ToolDefinition{{Type: "function", Function: ToolFunctionSchema{Name: "noop", Parameters: map[string]any{"type": "object"}}}},
+		Tools:    []ToolDefinition{{Type: "function", Function: &ToolFunctionSchema{Name: "noop", Parameters: map[string]any{"type": "object"}}}},
 	})
 	if err != nil {
 		t.Fatalf("round 1: %v", err)
@@ -252,7 +252,7 @@ func TestVertexProviderForwardsThoughtSignatureOnToolCalls(t *testing.T) {
 			{Role: "tool", Content: "ok", ToolCallID: "t1"},
 			{Role: "user", Content: "next"},
 		},
-		Tools: []ToolDefinition{{Type: "function", Function: ToolFunctionSchema{Name: "noop", Parameters: map[string]any{"type": "object"}}}},
+		Tools: []ToolDefinition{{Type: "function", Function: &ToolFunctionSchema{Name: "noop", Parameters: map[string]any{"type": "object"}}}},
 	})
 	if err != nil {
 		t.Fatalf("round 2: %v", err)
