@@ -16,9 +16,16 @@ func (p *OpenAIProvider) buildRequestBody(model string, req ChatRequest, stream 
 
 	// Compute provider capability once: does this endpoint support Google's thought_signature?
 	// We check providerType, name, apiBase, and the model string (robust detection for proxies/OpenRouter).
-	supportsThoughtSignature := strings.Contains(strings.ToLower(p.providerType), "gemini") ||
+	// Vertex AI included: its OpenAI-compat endpoint only serves Gemini-family models
+	// (Claude on Vertex uses Anthropic's native format, not this endpoint). Required to avoid
+	// HTTP 400 on tool-call rounds when the model name doesn't contain "gemini" (e.g. fine-tuned endpoint IDs).
+	lowerProviderType := strings.ToLower(p.providerType)
+	lowerAPIBase := strings.ToLower(p.apiBase)
+	supportsThoughtSignature := strings.Contains(lowerProviderType, "gemini") ||
+		strings.Contains(lowerProviderType, "vertex") ||
 		strings.Contains(strings.ToLower(p.name), "gemini") ||
-		strings.Contains(strings.ToLower(p.apiBase), "generativelanguage") ||
+		strings.Contains(lowerAPIBase, "generativelanguage") ||
+		strings.Contains(lowerAPIBase, "aiplatform") ||
 		strings.Contains(strings.ToLower(model), "gemini")
 
 	if supportsThoughtSignature {
@@ -129,6 +136,15 @@ func (p *OpenAIProvider) buildRequestBody(model string, req ChatRequest, stream 
 		msgs = append(msgs, msg)
 	}
 
+	// Apply DashScope cache_control wrapping (verified live 2026-05-08).
+	// Uses 3-source detection from p.isDashScope() (URL + providerType + name)
+	// to handle reverse-proxied endpoints. No-op for non-DashScope endpoints
+	// or when env disabled. For native OpenAI, role mapping above renames
+	// "system"→"developer" so wrap is a no-op (role guard).
+	if p.isDashScope() && !dashScopeCacheDisabled() && len(msgs) > 0 {
+		msgs[0] = wrapSystemForDashScopeCache(msgs[0])
+	}
+
 	// Safety net: strip trailing assistant message to prevent HTTP 400 from
 	// proxy providers (LiteLLM, OpenRouter) that don't support assistant prefill.
 	// This should rarely trigger — the agent loop ensures user message is last.
@@ -149,6 +165,19 @@ func (p *OpenAIProvider) buildRequestBody(model string, req ChatRequest, stream 
 	if len(req.Tools) > 0 {
 		body["tools"] = buildToolsPayload(p.schemaProviderName(), req.Tools)
 		body["tool_choice"] = "auto"
+	}
+
+	// DashScope tool prefix cache: cache_control on last tool definition
+	// caches the entire tools array (descriptions + schemas, ~5-10K tokens).
+	// Combined with system block cache: 2/4 markers used, 99.5% hit rate verified.
+	if p.isDashScope() && !dashScopeCacheDisabled() {
+		if t, ok := body["tools"].([]map[string]any); ok && len(t) > 0 {
+			markersFromSystem := 0
+			if len(msgs) > 0 {
+				markersFromSystem = countCacheControlMarkers(msgs[0])
+			}
+			body["tools"] = applyDashScopeToolPrefixCache(t, markersFromSystem)
+		}
 	}
 
 	// Together returns HTTP 400 on some requests when stream_options is present.

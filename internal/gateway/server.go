@@ -472,6 +472,24 @@ func (s *Server) SetAPIKeysHandler(h *httpapi.APIKeysHandler) {
 	s.handlers = append(s.handlers, h)
 }
 
+// SetWebhooksAdminHandler registers the webhook admin CRUD handler.
+func (s *Server) SetWebhooksAdminHandler(h *httpapi.WebhooksAdminHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
+// SetWebhookMessageHandler registers the POST /v1/webhooks/message runtime handler.
+// Only called when edition.Current().AllowsChannels() is true (Standard edition).
+func (s *Server) SetWebhookMessageHandler(h *httpapi.WebhookMessageHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
+// SetWebhookLLMHandler registers the POST /v1/webhooks/llm runtime handler.
+// Available in all editions (Standard + Lite). Localhost-only enforcement is
+// handled by WebhookAuthMiddleware at request time via webhook.LocalhostOnly.
+func (s *Server) SetWebhookLLMHandler(h *httpapi.WebhookLLMHandler) {
+	s.handlers = append(s.handlers, h)
+}
+
 // SetTenantsHandler sets the tenant management handler.
 func (s *Server) SetTenantsHandler(h *httpapi.TenantsHandler) {
 	s.handlers = append(s.handlers, h)
@@ -575,6 +593,11 @@ func (s *Server) SetAgentStore(as store.AgentStore) { s.agentStore = as }
 
 // SetMessageBus sets the message bus for MCP bridge media delivery.
 func (s *Server) SetMessageBus(mb *bus.MessageBus) { s.msgBus = mb }
+
+// SetWorkstationsHandler sets the workstations CRUD handler (Standard edition only).
+func (s *Server) SetWorkstationsHandler(h *httpapi.WorkstationsHandler) {
+	s.handlers = append(s.handlers, h)
+}
 
 // SetVersion sets the server version for health responses.
 func (s *Server) SetVersion(v string) { s.version = v }

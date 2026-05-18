@@ -26,10 +26,15 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, body any) (io.ReadCloser
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	// Azure OpenAI/Foundry support for now atleast
-	if strings.Contains(strings.ToLower(p.apiBase), "azure.com") {
+	switch {
+	case p.skipAuthHeader:
+		// Auth is injected by the HTTP client's Transport (e.g. oauth2.Transport
+		// for Vertex AI). Setting Authorization here would be overwritten anyway,
+		// so skip to avoid leaking a stale apiKey on the wire.
+	case strings.Contains(strings.ToLower(p.apiBase), "azure.com"):
+		// Azure OpenAI/Foundry uses api-key header instead of Authorization.
 		httpReq.Header.Set("api-key", p.apiKey)
-	} else {
+	default:
 		prefix := p.authPrefix
 		if prefix == "" {
 			prefix = "Bearer "
@@ -126,6 +131,7 @@ func (p *OpenAIProvider) parseResponse(resp *openAIResponse) *ChatResponse {
 		}
 		if resp.Usage.PromptTokensDetails != nil {
 			result.Usage.CacheReadTokens = resp.Usage.PromptTokensDetails.CachedTokens
+			result.Usage.CacheCreationTokens = resp.Usage.PromptTokensDetails.CacheCreationInputTokens
 		}
 		if resp.Usage.CompletionTokensDetails != nil && resp.Usage.CompletionTokensDetails.ReasoningTokens > 0 {
 			result.Usage.ThinkingTokens = resp.Usage.CompletionTokensDetails.ReasoningTokens

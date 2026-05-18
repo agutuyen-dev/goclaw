@@ -4,6 +4,25 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ## Unreleased
 
+### Added
+
+- **Packages Update Flow (Phase 2a: pip + npm)** — closes #900 (Phase 2a). Extends
+  Phase 1 update infrastructure to pip and npm package sources. `/v1/packages/updates`
+  now returns mixed-source results with an `availability: {github, pip, npm}` map.
+  Multi-source UI with per-source filter pills; unavailable sources (binary not on PATH
+  or Lite edition) hidden automatically. apk deferred to Phase 2b.
+  See `docs/packages-pip-npm.md` for command matrix, runbook, and min versions.
+
+- **Packages Update Flow (Phase 1: GitHub binaries)** — closes #900. Proactive
+  "N updates available" badge + per-row `[Update]` + `[Update All]` on the
+  Runtime & Packages page. Backend endpoints under `/v1/packages/updates*`
+  (master-scope). ETag-aware polling (304 responses don't burn rate limit),
+  stale-while-revalidate cache, atomic two-phase `.bak` swap with rollback.
+  Pre-release detection via regex + GitHub API flag; semver ordering via
+  `golang.org/x/mod/semver`; non-semver tags use string-inequality fallback
+  with downgrade protection. WebSocket events `package.update.*` for owner
+  clients. See `docs/packages-github.md` § "Updating Installed Packages".
+
 ### Breaking Changes
 
 - **Context pruning now opt-in.** Previously tool-result trimming ran by default
@@ -82,6 +101,7 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 - **Hooks system** — Event-driven hooks with command evaluators (shell exit code) and agent evaluators (delegate to reviewer). Blocking gates with auto-retry and recursion-safe evaluation.
 - **Media tools** — `create_image` (DashScope, MiniMax), `create_audio` (OpenAI, ElevenLabs, MiniMax, Suno), `create_video` (MiniMax, Veo), `read_document` (Gemini File API), `read_image`, `read_audio`, `read_video`. Persistent media storage with lazy-loaded MediaRef.
 - **Additional provider modes** — Claude CLI (Anthropic via stdio + MCP bridge), Codex (OpenAI gpt-5.3-codex via OAuth).
+- **Google Cloud Vertex AI provider** — Enterprise GCP integration via Vertex OpenAI-compatible endpoint. OAuth2 service account auth (inline JSON or file path) with automatic token refresh, plus Application Default Credentials (ADC) for GKE/Cloud Run/Compute Engine. Regional endpoints for data residency (e.g. `asia-southeast1`, `us-central1`). Addresses [#576](https://github.com/nextlevelbuilder/goclaw/issues/576).
 - **Knowledge graph** — LLM-powered entity extraction, graph traversal, force-directed visualization, and `knowledge_graph_search` agent tool.
 - **Memory management** — Admin dashboard for memory documents (CRUD, semantic search, chunk/embedding details, bulk re-indexing).
 - **Persistent pending messages** — Channel messages persisted to PostgreSQL with auto-compaction (LLM summarization) and monitoring dashboard.

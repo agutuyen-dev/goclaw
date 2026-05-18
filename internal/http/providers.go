@@ -119,32 +119,30 @@ func (h *ProvidersHandler) emitProviderCacheInvalidate(name string) {
 
 // RegisterRoutes registers all provider management routes on the given mux.
 func (h *ProvidersHandler) RegisterRoutes(mux *http.ServeMux) {
-	// Provider CRUD
-	mux.HandleFunc("GET /v1/providers", h.auth(h.handleListProviders))
-	mux.HandleFunc("POST /v1/providers", h.auth(h.handleCreateProvider))
-	mux.HandleFunc("GET /v1/providers/{id}", h.auth(h.handleGetProvider))
-	mux.HandleFunc("PUT /v1/providers/{id}", h.auth(h.handleUpdateProvider))
-	mux.HandleFunc("DELETE /v1/providers/{id}", h.auth(h.handleDeleteProvider))
+	mux.HandleFunc("GET /v1/providers", h.authRead(h.handleListProviders))
+	mux.HandleFunc("POST /v1/providers", h.authAdmin(h.handleCreateProvider))
+	mux.HandleFunc("GET /v1/providers/{id}", h.authRead(h.handleGetProvider))
+	mux.HandleFunc("PUT /v1/providers/{id}", h.authAdmin(h.handleUpdateProvider))
+	mux.HandleFunc("DELETE /v1/providers/{id}", h.authAdmin(h.handleDeleteProvider))
 
-	// Model listing (proxied to upstream provider API)
-	mux.HandleFunc("GET /v1/providers/{id}/models", h.auth(h.handleListProviderModels))
+	mux.HandleFunc("GET /v1/providers/{id}/models", h.authRead(h.handleListProviderModels))
 
-	// Provider + model verification (pre-flight check)
-	mux.HandleFunc("POST /v1/providers/{id}/verify", h.auth(h.handleVerifyProvider))
-	mux.HandleFunc("POST /v1/providers/{id}/verify-embedding", h.auth(h.handleVerifyEmbedding))
+	mux.HandleFunc("POST /v1/providers/{id}/verify", h.authAdmin(h.handleVerifyProvider))
+	mux.HandleFunc("POST /v1/providers/{id}/verify-embedding", h.authAdmin(h.handleVerifyEmbedding))
 
-	// Provider-scoped Codex pool activity monitor
-	mux.HandleFunc("GET /v1/providers/{id}/codex-pool-activity", h.auth(h.handleProviderCodexPoolActivity))
+	mux.HandleFunc("GET /v1/providers/{id}/codex-pool-activity", h.authRead(h.handleProviderCodexPoolActivity))
 
-	// Embedding system status
-	mux.HandleFunc("GET /v1/embedding/status", h.auth(h.handleEmbeddingStatus))
+	mux.HandleFunc("GET /v1/embedding/status", h.authRead(h.handleEmbeddingStatus))
 
-	// Claude CLI auth status (global — not per-provider)
-	mux.HandleFunc("GET /v1/providers/claude-cli/auth-status", h.auth(h.handleClaudeCLIAuthStatus))
+	mux.HandleFunc("GET /v1/providers/claude-cli/auth-status", h.authRead(h.handleClaudeCLIAuthStatus))
 }
 
-func (h *ProvidersHandler) auth(next http.HandlerFunc) http.HandlerFunc {
+func (h *ProvidersHandler) authAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return requireAuth(permissions.RoleAdmin, next)
+}
+
+func (h *ProvidersHandler) authRead(next http.HandlerFunc) http.HandlerFunc {
+	return requireAuth("", next)
 }
 
 // maskAPIKey replaces non-empty API keys with "***".
@@ -202,6 +200,29 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) {
 			host = "http://localhost:11434/v1"
 		}
 		h.providerReg.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, "ollama", config.DockerLocalhost(host), "llama3.3"))
+		return
+	}
+	// Vertex supports ADC (empty api_key) — handle before the generic key guard.
+	if p.ProviderType == store.ProviderVertex {
+		vsettings := store.ParseVertexProviderSettings(p.Settings)
+		if vsettings == nil {
+			slog.Warn("vertex: missing project_id/region in settings, cannot register", "name", p.Name)
+			return
+		}
+		vcfg := providers.VertexConfig{
+			Name:            p.Name,
+			CredentialsJSON: p.APIKey,
+			ProjectID:       vsettings.ProjectID,
+			Region:          vsettings.Region,
+			DefaultModel:    vsettings.Model,
+			APIBaseOverride: p.APIBase,
+		}
+		prov, err := providers.NewVertexProviderWithTimeout(vcfg)
+		if err != nil {
+			slog.Warn("vertex: register in-memory failed", "name", p.Name, "error", err)
+			return
+		}
+		h.providerReg.RegisterForTenant(p.TenantID, prov)
 		return
 	}
 	if p.APIKey == "" {

@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 26
+const SchemaVersion = 35
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -467,6 +467,165 @@ WHERE context_pruning IS NOT NULL
 	21: `SELECT 1;`,
 	22: `SELECT 1;`,
 
+	// Version 24 → 25: webhooks + webhook_calls tables (mirrors PG migration 000056).
+	// scopes/ip_allowlist stored as JSON TEXT; bool columns as INTEGER (0/1).
+	24: `CREATE TABLE IF NOT EXISTS webhooks (
+    id                  TEXT        PRIMARY KEY,
+    tenant_id           TEXT        NOT NULL,
+    agent_id            TEXT        REFERENCES agents(id) ON DELETE SET NULL,
+    name                TEXT        NOT NULL,
+    kind                TEXT        NOT NULL CHECK (kind IN ('llm', 'message')),
+    secret_prefix       TEXT,
+    secret_hash         TEXT        NOT NULL,
+    scopes              TEXT        NOT NULL DEFAULT '[]',
+    channel_id          TEXT,
+    rate_limit_per_min  INTEGER     NOT NULL DEFAULT 60,
+    ip_allowlist        TEXT        NOT NULL DEFAULT '[]',
+    require_hmac        INTEGER     NOT NULL DEFAULT 0,
+    localhost_only      INTEGER     NOT NULL DEFAULT 0,
+    revoked             INTEGER     NOT NULL DEFAULT 0,
+    created_by          TEXT,
+    created_at          TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at          TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    last_used_at        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_webhooks_tenant
+    ON webhooks (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_webhooks_tenant_agent
+    ON webhooks (tenant_id, agent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_webhooks_secret
+    ON webhooks (secret_hash)
+    WHERE revoked = 0;
+CREATE TABLE IF NOT EXISTS webhook_calls (
+    id               TEXT     PRIMARY KEY,
+    tenant_id        TEXT     NOT NULL,
+    webhook_id       TEXT     NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+    agent_id         TEXT,
+    idempotency_key  TEXT,
+    mode             TEXT     NOT NULL CHECK (mode IN ('sync', 'async')),
+    callback_url     TEXT,
+    status           TEXT     NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done', 'failed', 'dead')),
+    attempts         INTEGER  NOT NULL DEFAULT 0,
+    delivery_id      TEXT     NOT NULL,
+    next_attempt_at  TEXT,
+    started_at       TEXT,
+    request_payload  TEXT,
+    response         TEXT,
+    last_error       TEXT,
+    created_at       TEXT     NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    completed_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_calls_tenant_created
+    ON webhook_calls (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_webhook_calls_status_attempt
+    ON webhook_calls (status, next_attempt_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_webhook_calls_idempotency
+    ON webhook_calls (webhook_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;`,
+
+	// Version 25 → 26: migrate webhook_calls.request_payload + response from BLOB to TEXT.
+	// SQLite does not enforce column types strictly, but the declared type affects the
+	// column affinity used by drivers (BLOB → []byte, TEXT → string). Callers now write
+	// canonical JSON strings; rebuild the table so the declared type matches.
+	// Feature shipped in v25 but was non-functional on PG (22P02 error) — no live prod
+	// data exists. Safe to DELETE all rows before rebuilding.
+	25: `DELETE FROM webhook_calls;
+DROP TABLE IF EXISTS webhook_calls;
+CREATE TABLE webhook_calls (
+    id               TEXT     PRIMARY KEY,
+    tenant_id        TEXT     NOT NULL,
+    webhook_id       TEXT     NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+    agent_id         TEXT,
+    idempotency_key  TEXT,
+    mode             TEXT     NOT NULL CHECK (mode IN ('sync', 'async')),
+    callback_url     TEXT,
+    status           TEXT     NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done', 'failed', 'dead')),
+    attempts         INTEGER  NOT NULL DEFAULT 0,
+    delivery_id      TEXT     NOT NULL,
+    next_attempt_at  TEXT,
+    started_at       TEXT,
+    request_payload  TEXT,
+    response         TEXT,
+    last_error       TEXT,
+    created_at       TEXT     NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    completed_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_calls_tenant_created
+    ON webhook_calls (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_webhook_calls_status_attempt
+    ON webhook_calls (status, next_attempt_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_webhook_calls_idempotency
+    ON webhook_calls (webhook_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;`,
+
+	// Version 26 → 27: add lease_token to webhook_calls for optimistic-concurrency CAS.
+	// Mirrors PG migration 000057. ClaimNext sets lease_token = UUID; UpdateStatusCAS
+	// guards with AND lease_token = ?; ReclaimStale clears lease_token to NULL.
+	26: `ALTER TABLE webhook_calls ADD COLUMN lease_token TEXT;`,
+
+	// Version 27 → 28: add encrypted_secret to webhooks (AES-256-GCM of raw secret).
+	// Mirrors PG migration 000058. Existing rows with encrypted_secret = '' require rotation.
+	27: `ALTER TABLE webhooks ADD COLUMN encrypted_secret TEXT NOT NULL DEFAULT '';`,
+	// Version 29 → 30: workstations + agent_workstation_links tables. Mirrors PG migration 000056 (workstations).
+	29: `CREATE TABLE IF NOT EXISTS workstations (
+    id              TEXT PRIMARY KEY,
+    workstation_key VARCHAR(100) NOT NULL,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name            VARCHAR(255) NOT NULL,
+    backend_type    VARCHAR(20) NOT NULL CHECK (backend_type IN ('ssh','docker')),
+    metadata        BLOB NOT NULL,
+    default_cwd     VARCHAR(500) NOT NULL DEFAULT '',
+    default_env     BLOB NOT NULL,
+    active          INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    created_by      VARCHAR(255) NOT NULL DEFAULT '',
+    UNIQUE (tenant_id, workstation_key)
+);
+CREATE INDEX IF NOT EXISTS idx_workstations_tenant_active
+    ON workstations(tenant_id, active) WHERE active = 1;
+CREATE TABLE IF NOT EXISTS agent_workstation_links (
+    agent_id        TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    workstation_id  TEXT NOT NULL REFERENCES workstations(id) ON DELETE CASCADE,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    is_default      INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (agent_id, workstation_id)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_workstation_tenant ON agent_workstation_links(tenant_id);`,
+
+	// Version 30 → 31: workstation_permissions allowlist table. Mirrors PG migration 000057 (workstation_permissions).
+	30: `CREATE TABLE IF NOT EXISTS workstation_permissions (
+    id              TEXT PRIMARY KEY,
+    workstation_id  TEXT NOT NULL REFERENCES workstations(id) ON DELETE CASCADE,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    pattern         VARCHAR(500) NOT NULL,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    created_by      VARCHAR(255) NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (workstation_id, pattern)
+);
+CREATE INDEX IF NOT EXISTS idx_workstation_perms_ws ON workstation_permissions(workstation_id) WHERE enabled = 1;
+CREATE INDEX IF NOT EXISTS idx_workstation_perms_tenant ON workstation_permissions(tenant_id);`,
+
+	// Version 31 → 32: workstation_activity audit log table. Mirrors PG migration 000058 (workstation_activity).
+	31: `CREATE TABLE IF NOT EXISTS workstation_activity (
+    id              TEXT PRIMARY KEY,
+    tenant_id       TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    workstation_id  TEXT NOT NULL REFERENCES workstations(id) ON DELETE CASCADE,
+    agent_id        VARCHAR(255) NOT NULL DEFAULT '',
+    action          VARCHAR(20)  NOT NULL,
+    cmd_hash        VARCHAR(64)  NOT NULL DEFAULT '',
+    cmd_preview     VARCHAR(200) NOT NULL DEFAULT '',
+    exit_code       INTEGER,
+    duration_ms     INTEGER,
+    deny_reason     VARCHAR(200) NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ws_activity_ws_time     ON workstation_activity(workstation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ws_activity_tenant_time ON workstation_activity(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ws_activity_retention   ON workstation_activity(created_at);`,
+
 	// Version 23 → 24: vault_documents scope/ownership consistency triggers.
 	// Mirrors PG migration 000055 CHECK constraint; SQLite cannot add CHECK via
 	// ALTER TABLE so we use BEFORE INSERT + BEFORE UPDATE triggers instead.
@@ -497,15 +656,15 @@ CREATE TRIGGER IF NOT EXISTS trg_vault_docs_scope_consistency_upd
     SELECT RAISE(ABORT, 'vault_documents_scope_consistency violation');
   END;`,
 
-	// Version 24 → 25: add chat_id column + composite index (mirrors PG migration 000056).
+	// Version 33 → 34: add chat_id column + composite index (mirrors PG migration 000056).
 	// SQLite lacks regex by default — skip backfill (desktop is single-user; cross-chat risk minimal).
-	24: `ALTER TABLE vault_documents ADD COLUMN chat_id TEXT;
+	33: `ALTER TABLE vault_documents ADD COLUMN chat_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_vault_docs_team_chat ON vault_documents(team_id, chat_id) WHERE team_id IS NOT NULL;`,
 
-	// Version 25 → 26: change agent_heartbeats.provider_id FK to ON DELETE SET NULL
+	// Version 34 → 35: change agent_heartbeats.provider_id FK to ON DELETE SET NULL
 	// (mirrors PG migration 000057). SQLite cannot ALTER FK clauses, so the table
 	// must be rebuilt. Explicit 25-column INSERT/SELECT to avoid silent column drift.
-	25: `-- Defensive: clear orphan provider_id refs before rebuild (idempotent).
+	34: `-- Defensive: clear orphan provider_id refs before rebuild (idempotent).
 UPDATE agent_heartbeats
    SET provider_id = NULL
  WHERE provider_id IS NOT NULL
@@ -561,6 +720,13 @@ ALTER TABLE agent_heartbeats_new RENAME TO agent_heartbeats;
 CREATE INDEX IF NOT EXISTS idx_heartbeats_due
   ON agent_heartbeats(next_run_at)
   WHERE enabled = 1 AND next_run_at IS NOT NULL;`,
+	// Version 35 → 36: add encrypted_env BLOB column to secure_cli_agent_grants.
+	// Mirrors PG migration 000058. NULL = no grant-level env override.
+	// DOWN path: modernc.org/sqlite supports DROP COLUMN since v3.35 (bundled
+	// version is ≥3.39). If DROP COLUMN fails on an older embedded build, the
+	// fallback is to rebuild the table without the column — see runbook
+	// docs/runbooks/packages-migration-rollback.md.
+	35: `ALTER TABLE secure_cli_agent_grants ADD COLUMN encrypted_env BLOB;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.
@@ -752,56 +918,22 @@ func EnsureSchema(db *sql.DB) error {
 			if !ok {
 				return fmt.Errorf("sqlite: missing migration for version %d → %d", v, v+1)
 			}
-			// Migrations that rebuild a table referenced by another table's FK
-			// require foreign_keys=OFF per SQLite altertable §7. The pragma is
-			// a no-op inside a transaction, so toggle it around BEGIN/COMMIT.
-			// v25 → v26: rebuilds agent_heartbeats; heartbeat_run_logs.heartbeat_id FKs into it.
-			needsFKOff := v == 25
-			if needsFKOff {
-				if _, err := db.Exec("PRAGMA foreign_keys=OFF"); err != nil {
-					return fmt.Errorf("disable FK before v%d: %w", v, err)
-				}
-			}
 			tx, txErr := db.Begin()
 			if txErr != nil {
-				if needsFKOff {
-					_, _ = db.Exec("PRAGMA foreign_keys=ON")
-				}
 				return fmt.Errorf("begin migration tx v%d: %w", v, txErr)
 			}
 			if _, err := tx.Exec(patch); err != nil {
 				tx.Rollback()
-				if needsFKOff {
-					_, _ = db.Exec("PRAGMA foreign_keys=ON")
-				}
 				return fmt.Errorf("apply migration v%d: %w", v, err)
 			}
 			if _, err := tx.Exec(
 				"UPDATE schema_version SET version = ? WHERE version = ?", v+1, v,
 			); err != nil {
 				tx.Rollback()
-				if needsFKOff {
-					_, _ = db.Exec("PRAGMA foreign_keys=ON")
-				}
 				return fmt.Errorf("update schema version v%d: %w", v, err)
 			}
 			if err := tx.Commit(); err != nil {
-				if needsFKOff {
-					_, _ = db.Exec("PRAGMA foreign_keys=ON")
-				}
 				return fmt.Errorf("commit migration v%d: %w", v, err)
-			}
-			if needsFKOff {
-				// Verify referential integrity after the rebuild.
-				if rows, qErr := db.Query("PRAGMA foreign_key_check"); qErr == nil {
-					if rows.Next() {
-						slog.Warn("sqlite: foreign_key_check reported violations after migration", "version", v+1)
-					}
-					rows.Close()
-				}
-				if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-					return fmt.Errorf("re-enable FK after v%d: %w", v, err)
-				}
 			}
 			// Post-SQL backfill hooks for migrations needing app-side logic.
 			// modernc.org/sqlite lacks regexp_replace, so the v15 → v16
