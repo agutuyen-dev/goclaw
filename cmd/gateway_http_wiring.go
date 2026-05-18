@@ -338,6 +338,25 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 		d.server.SetTTSConfigHandler(httpapi.NewTTSConfigHandler(d.pgStores.SystemConfigs, d.pgStores.ConfigSecrets))
 	}
 
+	// Workstations API — Standard edition only.
+	// Lite edition MUST NOT expose these routes (silent orphan data + contract violation).
+	if edition.Current().Name != "lite" {
+		if d.pgStores != nil && d.pgStores.Workstations != nil && d.pgStores.WorkstationLinks != nil {
+			wsH := httpapi.NewWorkstationsHandler(
+				d.pgStores.Workstations,
+				d.pgStores.WorkstationLinks,
+				d.pgStores.Tenants,
+			)
+			if d.pgStores.WorkstationPermissions != nil {
+				wsH.SetPermStore(d.pgStores.WorkstationPermissions)
+			}
+			if d.pgStores.WorkstationActivity != nil {
+				wsH.SetActivityStore(d.pgStores.WorkstationActivity)
+			}
+			d.server.SetWorkstationsHandler(wsH)
+		}
+	}
+
 	// Seed + apply builtin tool disables
 	if d.pgStores.BuiltinTools != nil {
 		seedBuiltinTools(context.Background(), d.pgStores.BuiltinTools)

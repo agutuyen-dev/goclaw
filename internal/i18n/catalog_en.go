@@ -240,6 +240,15 @@ func init() {
 		MsgWebhookMediaChannelUnsupported: "channel does not support media attachments",
 		MsgWebhookIPDenied:                "request origin is not in the IP allowlist",
 		MsgWebhookEncryptionUnavailable:   "webhook encryption key not configured; set GOCLAW_ENCRYPTION_KEY to enable webhooks",
+		// Workstation
+		MsgWorkstationNotFound:     "workstation not found: %s",
+		MsgWorkstationKeyExists:    "workstation key already in use: %s",
+		MsgInvalidBackend:          "invalid backend type: %s (must be ssh|docker)",
+		MsgWorkstationInactive:     "workstation is inactive: %s",
+		MsgInvalidMetadataShape:    "invalid metadata for %s backend: %s",
+		MsgWorkstationRequired:     "no workstation bound to agent; pass workstation_id",
+		MsgWorkstationAccessDenied: "agent %s not authorized for workstation %s",
+		MsgBackendNotReady:         "workstation backend not ready: %s",
 
 		// Hooks
 		MsgHookInvalidMatcher:          "invalid matcher regex: %s",
@@ -252,6 +261,17 @@ func init() {
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",
+		// Workstation permissions (Phase 6)
+		MsgWorkstationCmdDenied:    "command denied by workstation policy: %s",
+		MsgWorkstationEnvDenied:    "env var denied by policy: %s",
+		MsgWorkstationInputInvalid: "command contains invalid characters: %s",
+		MsgWorkstationRateLimit:    "workstation rate limit exceeded",
+		MsgWorkstationPermNotFound:  "permission entry not found: %s",
+		// Workstation activity (Phase 7)
+		MsgWorkstationActivityTitle: "Recent Activity",
+		MsgWorkstationActionExec:    "Exec",
+		MsgWorkstationActionDeny:    "Denied",
+
 		// Package updates (Phase 4+5)
 		MsgPackageNotInstalled:  "Package %s is not installed",
 		MsgPackageUpdateLocked:  "Package %s is being updated by another request",

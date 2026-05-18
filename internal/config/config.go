@@ -55,8 +55,8 @@ type Config struct {
 	Telemetry TelemetryConfig `json:"telemetry"`
 	Tailscale TailscaleConfig `json:"tailscale"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Hooks     HooksConfig     `json:"hooks,omitempty"`
-	Packages  PackagesConfig  `json:"packages,omitempty"` // runtime package mgmt (GitHub updater)
+	Hooks     HooksConfig     `json:"hooks"`
+	Packages  PackagesConfig  `json:"packages"` // runtime package mgmt (GitHub updater)
 	mu        sync.RWMutex
 }
 

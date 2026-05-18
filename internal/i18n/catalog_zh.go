@@ -242,6 +242,16 @@ func init() {
 		MsgWebhookEncryptionUnavailable:   "Webhook 加密密钥未配置；请设置 GOCLAW_ENCRYPTION_KEY 以启用 Webhook",
 
 		// Hooks
+		// Workstation
+		MsgWorkstationNotFound:     "未找到工作站：%s",
+		MsgWorkstationKeyExists:    "工作站键已被使用：%s",
+		MsgInvalidBackend:          "无效的后端类型：%s（必须是 ssh|docker）",
+		MsgWorkstationInactive:     "工作站未激活：%s",
+		MsgInvalidMetadataShape:    "%s 后端的元数据无效：%s",
+		MsgWorkstationRequired:     "Agent 未绑定工作站，请提供 workstation_id",
+		MsgWorkstationAccessDenied: "Agent %s 无权访问工作站 %s",
+		MsgBackendNotReady:         "工作站后端未就绪：%s",
+
 		MsgHookInvalidMatcher:          "无效的匹配器正则表达式: %s",
 		MsgHookCommandDisabledStandard: "命令类型钩子仅在 Lite 版本可用",
 		MsgHookPromptRequiresMatcher:   "prompt 钩子必须指定 matcher 或 if_expr(成本失控保护)",
@@ -252,6 +262,17 @@ func init() {
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",
+		// Workstation permissions (Phase 6)
+		MsgWorkstationCmdDenied:    "命令被工作站策略拒绝: %s",
+		MsgWorkstationEnvDenied:    "环境变量被策略拒绝: %s",
+		MsgWorkstationInputInvalid: "命令包含无效字符: %s",
+		MsgWorkstationRateLimit:    "已超过工作站速率限制",
+		MsgWorkstationPermNotFound:  "未找到权限条目: %s",
+		// Workstation activity (Phase 7)
+		MsgWorkstationActivityTitle: "近期活动",
+		MsgWorkstationActionExec:    "执行",
+		MsgWorkstationActionDeny:    "拒绝",
+
 		// Package updates (Phase 4+5)
 		MsgPackageNotInstalled:  "软件包 %s 未安装",
 		MsgPackageUpdateLocked:  "软件包 %s 正在被其他请求更新",
